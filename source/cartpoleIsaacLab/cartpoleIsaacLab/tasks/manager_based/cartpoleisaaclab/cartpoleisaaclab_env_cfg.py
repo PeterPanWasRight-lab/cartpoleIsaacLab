@@ -9,8 +9,8 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
-from isaaclab.managers import ObservationGroupCfg as ObsGroup
-from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup  # 创建一个观测状态组
+from isaaclab.managers import ObservationTermCfg as ObsTerm    # 某一个需要被观测的状态
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -168,13 +168,13 @@ class CartpoleisaaclabEnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationsCfg = TerminationsCfg()
 
     # Post initialization
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:    # __init__.py执行后执行  防止无限递归、解决字段依赖问题（核心原因）
         """Post initialization."""
         # general settings
-        self.decimation = 2
-        self.episode_length_s = 5
+        self.decimation = 2   # 每个环境步长（step_dt）包含 2 个物理步长（physics_dt）
+        self.episode_length_s = 5  # 设置单个回合的最大持续时间（秒）
         # viewer settings
-        self.viewer.eye = (8.0, 0.0, 5.0)
+        self.viewer.eye = (8.0, 0.0, 5.0)   # 摄像机位于 (x=8.0, y=0.0, z=5.0)，俯视整个场景
         # simulation settings
-        self.sim.dt = 1 / 120
-        self.sim.render_interval = self.decimation
+        self.sim.dt = 1 / 120  # 每 1/120 秒（约 8.33ms）执行一次物理引擎更新 这是 NVIDIA PhysX 的推荐值，平衡精度和性能
+        self.sim.render_interval = self.decimation  # 每 decimation 个物理步渲染一次（即每个环境步渲染一次） 避免每帧都渲染（GPU 开销大），同时保持流畅体验
