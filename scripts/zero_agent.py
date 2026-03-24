@@ -54,6 +54,14 @@ def main():
     # env_cfg.sim.device = args_cli.device
     # # setup RL environment
     # env = ManagerBasedRLEnv(cfg=env_cfg)
+    
+    # # 等效于以下代码：
+    # env_cfg = CartpoleEnvCfg()    #  这个被隐藏在工厂里进行实例化了  
+    # # 在这个项目里叫cartpoleisaaclab_env_cfg：CartpoleisaaclabEnvCfg，可以到cartpoleisaaclab文件夹下__init__.py中查看注册的环境
+    # env_cfg.scene.num_envs = args_cli.num_envs
+    # env_cfg.sim.device = args_cli.device
+    # # setup RL environment
+    # env = ManagerBasedRLEnv(cfg=env_cfg)
 
     # print info (this is vectorized environment)
     print(f"[INFO]: Gym observation space: {env.observation_space}")
