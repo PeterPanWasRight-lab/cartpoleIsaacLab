@@ -23,7 +23,7 @@ from . import mdp
 # Pre-defined configs
 ##
 
-from isaaclab_assets.robots.cartpole import CARTPOLE_CFG  # isort:skip
+from cartpoleIsaacLab.assets.config.cartpole_cfg import CARTPOLE_CFG  # isort:skip
 
 
 ##
@@ -41,8 +41,15 @@ class CartpoleisaaclabSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.GroundPlaneCfg(size=(100.0, 100.0)),
     )
 
-    # robot
-    robot: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    # robot  这个名字很重要，后面70行的asset_name要和这个对应  
+    robot: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")  # 每个环境中的机器人实例将被命名为 "Robot"（例如 "/CartpoleisaaclabEnv_0/Robot"） 通过 ENV_REGEX_NS 占位符实现自动命名和路径管理
+    # prim_path: str是AssetBaseCfg类的一个实例，用于描述机器人的配置信息。这就是面向对象的强大之处，通过继承和组合，我们可以轻松地创建复杂的配置结构，同时保持代码的清晰和可维护性。
+    # 通过在机器人配置中使用 ENV_REGEX_NS 占位符，Isaac Lab 会自动为每个环境实例化一个独立的机器人，并将其命名为 "Robot"（例如 "/CartpoleisaaclabEnv_0/Robot"、"/CartpoleisaaclabEnv_1/Robot" 等），这样每个环境中的机器人都是独立的，互不干扰。
+    # /World/envs/env_0/Robot
+    # /World/envs/env_1/Robot
+    # ...
+    # /World/envs/env_4095/Robot
+    # 另外CARTPOLE_CFG类内部和ground、demo_light都是AssetBaseCfg类的实例，用于描述场景中的各种元素，例如地面、机器人、灯光等。
 
     # lights
     dome_light = AssetBaseCfg(
@@ -59,8 +66,10 @@ class CartpoleisaaclabSceneCfg(InteractiveSceneCfg):
 @configclass
 class ActionsCfg:
     """Action specifications for the MDP."""
-
+    #  如果这里的asset_name和上面CartpoleisaaclabSceneCfg中的robot名字不一致时，则会报错：" Scene entity with key 'robot' not found. Available Entities: '['terrain', 'robo', 'ground', 'dome_light']'"
     joint_effort = mdp.JointEffortActionCfg(asset_name="robot", joint_names=["slider_to_cart"], scale=100.0)
+    # asset_name指定了这个动作作用于哪个资产（在这里是 "robot"，对应于场景配置中的机器人实例），joint_names指定了这个动作控制哪些关节（在这里是 "slider_to_cart"，对应于小车沿水平轴移动的关节），scale指定了动作输入的缩放因子（在这里是100.0，表示将输入动作乘以100来得到实际施加的力矩）。
+    # 类似的还有 JointVelocityActionCfg RelativeJointPositionActionCfg
 
 
 @configclass
@@ -75,9 +84,17 @@ class ObservationsCfg:
         joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel)
 
+        # 如果只想输出cart_to_pole，则应该像下这样写：
+        # joint_pos_rel = ObsTerm(
+        #     func=mdp.joint_pos_rel,
+        #     params={
+        #         "asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"]),
+        #     },
+        # )
+
         def __post_init__(self) -> None:
-            self.enable_corruption = False
-            self.concatenate_terms = True
+            self.enable_corruption = False    # 是否启用观测值干扰（如噪声）
+            self.concatenate_terms = True     # 是否将所有观测项连接成一个大向量输出（如果False，则每个观测项单独输出） 这样可以直接输入神经网络；否则将输出的是joint_pos_rel和joint_vel_rel
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
@@ -88,13 +105,14 @@ class EventCfg:
     """Configuration for events."""
 
     # reset
+    # Reset the robot joints with offsets around the default position and velocity by the given ranges.
     reset_cart_position = EventTerm(
         func=mdp.reset_joints_by_offset,
-        mode="reset",
+        mode="reset",  # 事件触发模式，reset()表示在环境重置时触发，step表示在每个环境步骤时触发。比如zero_env.py中就是在第62行env.reset()时触发这个事件，给小车和杆子一个随机的初始位置和速度。
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"]),
-            "position_range": (-1.0, 1.0),
-            "velocity_range": (-0.5, 0.5),
+            "position_range": (-1.0, 1.0),  # 以默认位置为中心，在[-1.0, 1.0]范围内随机偏移，设置小车在水平轴上的初始位置
+            "velocity_range": (-0.5, 0.5),  # 以默认速度为中心，在[-0.5, 0.5]范围内随机偏移，设置小车在水平轴上的初始速度
         },
     )
 
@@ -112,6 +130,7 @@ class EventCfg:
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
+    # 这里注册的所有奖励项都在reward_manager.py中被调用，具体可以debug一下看流程。注意断点打到实际调用的函数体内（而不是这里）
 
     # (1) Constant running reward
     alive = RewTerm(func=mdp.is_alive, weight=1.0)
@@ -119,13 +138,13 @@ class RewardsCfg:
     terminating = RewTerm(func=mdp.is_terminated, weight=-2.0)
     # (3) Primary task: keep pole upright
     pole_pos = RewTerm(
-        func=mdp.joint_pos_target_l2,
+        func=mdp.joint_pos_target_l2,  # Isaaclab官方没有定义，被自定义到了mdp.reward.py中
         weight=-1.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"]), "target": 0.0},
     )
     # (4) Shaping tasks: lower cart velocity
     cart_vel = RewTerm(
-        func=mdp.joint_vel_l1,
+        func=mdp.joint_vel_l1,  # isaaclab官方定义的函数,计算env_num个实例里，指定的关节速度的L1范数（绝对值之和）
         weight=-0.01,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"])},
     )
@@ -135,7 +154,7 @@ class RewardsCfg:
         weight=-0.005,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"])},
     )
-
+    # 查官方文档会发现joint_vel_l1还需要传入一个env参数，Isaaclab架构对其自动注入。
 
 @configclass
 class TerminationsCfg:
@@ -158,7 +177,7 @@ class TerminationsCfg:
 @configclass
 class CartpoleisaaclabEnvCfg(ManagerBasedRLEnvCfg):
     # Scene settings
-    scene: CartpoleisaaclabSceneCfg = CartpoleisaaclabSceneCfg(num_envs=4096, env_spacing=4.0)
+    scene: CartpoleisaaclabSceneCfg = CartpoleisaaclabSceneCfg(num_envs=4096, env_spacing=4.0)  # 场景设置 每个环境之间间隔 4 米，足够避免相互干扰
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
