@@ -23,6 +23,8 @@ for epoch in range(epochs):
         # Loss 计算等对精度敏感的操作会自动保持在 FP32
         loss = loss_fn(output, target)
 
+    # autocast通常只用于前向传播，不应用于反向传播
+
     # 出with后，所有原本是FD32转成FD16的变量已经被转回FD32了，但是output等在autocast中生成的变量却被留在FD16了
     # 4. 反向传播：放大 loss，计算梯度
     # 因为 FP16 表示范围小，梯度容易变成 0 (下溢)。
@@ -43,3 +45,6 @@ for epoch in range(epochs):
     scaler.update()
 
     print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
+    print(f"Current Scale: {scaler.get_scale():.1f}")
+    print("output dtype:", output.dtype)  # 输出的类型是 torch.float16
+    print("outputnew dtype:", model(data).dtype)  # 这里的输出也是 torch.float32，因为模型参数是 float32 的，autocast 只会在 with 块内自动转换数据类型，出了 with 块后，模型参数仍然是 float32，所以输出也是 float32 的。
